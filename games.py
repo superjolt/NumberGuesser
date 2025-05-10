@@ -3,18 +3,22 @@ import palette as p
 import helperkit as hk
 
 def main():
-    hk.set_theme("DRACULA")
-    options = ['Number Guessing', 'Blackjack', 'Dice Roller', 'Exit this :(']
+    hk.set_theme("TOKYO_NIGHT")
+    options = ['Number Guessing', 'Blackjack', 'Dice Roller', 'Rock Paper Scissors', 'Hangman', 'Exit this :(']
 
     while True:
         choice = hk.get_input_option("\nWhat do you wanna play?", options)
 
         if choice == 'Number Guessing':
-            computerGuessingGame()
+            numberGuesserSelect()
         elif choice == 'Blackjack':
             blackjack()
         elif choice == 'Dice Roller':
             diceRoller()
+        elif choice == 'Rock Paper Scissors':
+            rockPaperScissors()
+        elif choice == 'Hangman':
+            hangman()
         elif choice == 'Exit this :(':
             break
 
@@ -27,15 +31,14 @@ def numberGuesserSelect():
     hk.print_message("The other is where YOU create a secret number, and the computer tries to guess it!\n")
     choice = hk.get_input_option("Which game do you want to play?", options)
 
-    if choice == 'Human Guessing Game':
+    if choice == 'Try To Guess My Number!':
         humanGuessingGame()
         return
-    elif choice == 'Computer Guessing Game':
+    elif choice == 'Let Me Guess Your Number!':
         computerGuessingGame()
         return
 
 def blackjack():
-    """Blackjack"""
 
     hk.print_message("") # blank message in python already has a \n! (newline)
 
@@ -91,6 +94,74 @@ def diceRoller():
     hk.print_message("Rolling the dice...")
     roll = random.randint(1, 6)
     hk.success(f"You rolled a {roll}!")
+
+def rockPaperScissors():
+    
+    computerWin = 0
+    playerWin = 0
+
+    gameLength = hk.get_input_number("How many times do you wanna play?", int) # You can only iterate over an int 
+    
+    for i in range(gameLength):
+        myChoice = random.choice(["rock", "paper", "scissors"])
+        input = hk.get_input_string("Rock, Paper, or Scissors?")
+
+        hk.print_message(f"You picked {input}, and I picked {myChoice}.")
+
+        if input == "rock" and myChoice == "paper":
+            hk.error("You lose! I win!")
+            computerWin += 1
+
+        elif input == "paper" and myChoice == "scissors":
+            hk.error("You lose! I win!")
+            computerWin += 1
+
+        elif input == "scissors" and myChoice == "rock":
+            hk.error("You lose! I win!")
+            computerWin += 1
+
+        elif input == myChoice:
+            hk.note("We tied!")
+
+        else:
+            hk.success("You won! I lost!")
+            playerWin += 1
+
+        hk.print_message(f"You vs Computer: {playerWin} | {computerWin}")
+
+def hangman():
+    
+    words = []
+
+    # cool check, basically takes words that dont have special chars and have a length from 3 to 8, and makes it lower case
+    
+    with open('/usr/share/dict/words', 'r') as f:
+        for word in f:
+            word = word.strip()
+            if word.isalpha() and 3 <= len(word) <= 8:
+                words.append(word)
+    
+    secretWord = random.choice(words).lower()
+
+    visibleWord = "_" * len(secretWord) # fill it up
+    
+    while visibleWord != secretWord:
+
+        hk.print_message(f"Word: {visibleWord}")
+        guess = hk.get_input_string("Guess a letter", max_len=1) # we only accept letters
+
+        guess.lower()
+
+        visibleList = list(visibleWord) # make it a list
+
+        for i in range(len(secretWord)): # is that guess right
+            if secretWord[i] == guess:
+                print("You guessed a letter!")
+                visibleList[i] = guess
+
+        visibleWord = "".join(visibleList) # make it a string again
+
+    hk.success("\nYou guessed the word!\nGGs!\n")
 
 def humanGuessingGame():
 
