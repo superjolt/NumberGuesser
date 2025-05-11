@@ -1,21 +1,34 @@
 import random
-import hashlib
 import os
-
 import palette as p
 import helperkit as hk
+import accounts as ac  # our database library
 
 jolt_currency = 0
-signed_in = False
-current_user = None
+gamble_amount = 0
 
 def main():
     hk.set_theme("TOKYO_NIGHT")
+    ac.ensure_files()
+    ac.add_field("points", "0")
     setup()
     setup_credentials()
 
     while True:
-        hk.menu(f"What do you wanna play? (Points: {jolt_currency})", games)
+        if not ac.signedIn:
+            hk.print_message("Please sign in first.")
+            setup_credentials()
+            continue
+
+        # fetch latest points from accounts
+        jolt_current = int(ac.get_value(ac.activeUser, "points"))
+        hk.print_message(f"You have {jolt_current} points")
+        gamble_amount = hk.get_input_number(
+            "How much do you want to gamble? If you don't want to, say 0!",
+            min_val=0
+        )
+        hk.menu(f"What do you wanna play? (Points: {jolt_current})", games)
+
 
 def setup():
     if not os.path.exists("users.txt"):
@@ -32,98 +45,20 @@ def setup():
         'Save and exit': save_and_exit
     }
 
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
 
 def setup_credentials():
-    global jolt_currency
-    choice = hk.get_input_option("Sign in, or sign up?", ["Sign in", "Sign up"] )
+    global signed_in, current_user
+    choice = hk.get_input_option("Sign in, or sign up?", ["Sign in", "Sign up"])
     if choice == "Sign up":
-        sign_up()
+        ac.signUp()
     else:
-        sign_in()
+        ac.signIn()
 
-    jolt_currency = get_points()
+    # synchronize local state
+    signed_in = ac.signedIn
+    current_user = ac.activeUser
 
-
-def sign_up():
-    global current_user, signed_in
-    while True:
-        uname = hk.get_input_string("Select your username")
-        if user_exists(uname):
-            hk.print_message("That username is already taken!")
-        else:
-            current_user = uname
-            break
-
-    pwd = hk.get_input_password("Create your password")
-    hashed = hash_password(pwd)
-
-    with open("users.txt","a") as f:
-        f.write(f"{current_user}:{hashed}:0\n")
-
-    signed_in = True
-    hk.success(f"User {current_user} created and signed in!")
-
-
-def sign_in():
-    global current_user, signed_in
-    uname = hk.get_input_string("Enter your username")
-    pwd = hk.get_input_password("Enter your password")
-    hashed = hash_password(pwd)
-
-    with open("users.txt","r") as f:
-        for line in f:
-            user, hpwd, pts = line.strip().split(":")
-            if user == uname and hpwd == hashed:
-                current_user = user
-                signed_in = True
-                hk.success(f"Logged in as {current_user}")
-                return
-    hk.print_message("Invalid credentials.")
-
-
-def user_exists(uname):
-    if not os.path.exists("users.txt"):
-        return False
-    with open("users.txt","r") as f:
-        for line in f:
-            if line.startswith(uname + ":"):
-                return True
-    return False
-
-
-def get_points():
-    global current_user, signed_in
-    if not signed_in:
-        return 0
-    with open("users.txt","r") as f:
-        for line in f:
-            user, _, pts = line.strip().split(":")
-            if user == current_user:
-                return int(pts)
-    return 0
-
-
-def set_points(value):
-    global current_user, signed_in, jolt_currency
-    if not signed_in:
-        hk.print_message("Sign in first.")
-        return
-
-    lines = []
-    with open("users.txt","r") as f:
-        for line in f:
-            user, hpwd, pts = line.strip().split(":")
-            if user == current_user:
-                lines.append(f"{user}:{hpwd}:{value}\n")
-            else:
-                lines.append(line)
-
-    with open("users.txt","w") as f:
-        f.writelines(lines)
-
-    jolt_currency = value
+# update currency and persist via accounts
 
 def update_currency_on_result(result):
     global jolt_currency
@@ -133,7 +68,25 @@ def update_currency_on_result(result):
     elif result == "lose":
         jolt_currency -= 1
         hk.error("You lost 1 point!")
-    set_points(jolt_currency)
+    ac.set_value(ac.activeUser, "points", jolt_currency)
+
+def update_jolt_currency(amountOfPoints):
+    ac.set_value(ac.activeUser, "points", amountOfPoints)
+
+# === Game functions ===
+def number_guesser_select():
+    opts = ['Try To Guess My Number!', 'Let Me Guess Your Number!']
+    hk.print_message(
+        "Try to guess my number is a game where the computer picks a secret number, you try to guess it."
+    )
+    hk.print_message(
+        "The other is where YOU create a secret number, and the computer tries to guess it!\n"
+    )
+    choice = hk.get_input_option("Which game do you want to play?", opts)
+    if choice == opts[0]:
+        human_guessing_game()
+    else:
+        computer_guessing_game()
 
 # === Game functions ===
 def number_guesser_select():
@@ -149,6 +102,8 @@ def number_guesser_select():
 def human_guessing_game():
     hk.print_message("Welcome to the Human Guessing Game! Try to guess the secret number chosen by the computer.")
 
+    global gamble_amount
+    global jolt_currency
     secretNumber = random.randint(1, 100)  # New secret number every game
     guess = None
     guessesTaken = 0
@@ -162,6 +117,9 @@ def human_guessing_game():
             hk.warn("Too small!")
         else:
             hk.success(f"Yay! You won in {guessesTaken} guesses!")
+            jolt_currency = 10 // guessesTaken
+            jolt_currency *= gamble_amount
+            update_jolt_currency(jolt_currency)
             break
         
         guessesTaken += 1
@@ -169,6 +127,8 @@ def human_guessing_game():
 def computer_guessing_game():
     hk.print_message("Welcome to the Computer Guessing Game! Think of a number, and the computer will try to guess it.")
 
+    global gamble_amount
+    global jolt_currency
     guess = None
     guessesTaken = 0
     high = 100
@@ -193,6 +153,10 @@ def computer_guessing_game():
             high = guess # so we lower the bar
         
         guessesTaken +=1
+        
+    jolt_currency = guessesTaken
+    jolt_currency *= gamble_amount
+
 
 def blackjack():
     hk.print_message("Welcome to Blackjack! Try to get as close to 21 as possible without going over.")
@@ -207,32 +171,32 @@ def blackjack():
         return total
 
     while True:
-        p_tot = adjust_hand(player)
-        d_vis = dealer[0]
-        hk.print_message(f"Your cards: {player} | Total: {p_tot}\nDealer: {d_vis}+?")
+        playerTotal = adjust_hand(player)
+        dealerVisible = dealer[0]
+        hk.print_message(f"Your cards: {player} | Total: {playerTotal}\nDealer: {dealerVisible}+?")
         choice = hk.get_input_string("Hit or Stand?")
-        if choice.lower() == "hit":
+        if choice == "hit":
             player.append(random.choice([2,3,4,5,6,7,8,9,10,11]))
         else:
             while adjust_hand(dealer) < 17:
                 dealer.append(random.choice([2,3,4,5,6,7,8,9,10,11]))
 
-        p_tot = adjust_hand(player)
-        d_tot = adjust_hand(dealer)
+        playerTotal = adjust_hand(player)
+        dealerTotal = adjust_hand(dealer)
 
-        if p_tot > 21:
+        if playerTotal > 21:
             hk.warn("You busted! You lost!")
             update_currency_on_result("lose")
             return
-        if d_tot > 21:
+        if dealerTotal > 21:
             hk.success("Dealer busted! You win.")
             update_currency_on_result("win")
             return
-        if p_tot > d_tot:
+        if playerTotal > dealerTotal:
             hk.success("You have a greater total! You win!")
             update_currency_on_result("win")
             return
-        if p_tot < d_tot:
+        if playerTotal < dealerTotal:
             hk.warn("The dealer has a greater total! You lose!")
             update_currency_on_result("lose")
             return
@@ -308,20 +272,20 @@ def word_chain():
 
 def save_and_exit():
     global current_user, jolt_currency
-    if not signed_in:
+    if not ac.signedIn:
         hk.print_message("No user signed in. Nothing to save.")
         exit()
     lines=[]
     with open("users.txt") as f:
         for line in f:
             user,hpwd,pts=line.strip().split(":")
-            if user==current_user:
+            if user==ac.activeUser:
                 lines.append(f"{user}:{hpwd}:{jolt_currency}\n")
             else:
                 lines.append(line)
     with open("users.txt","w") as f:
         f.writelines(lines)
-    hk.success(f"Saved {jolt_currency} points for {current_user}. Bye!")
+    hk.success(f"Saved {jolt_currency} points for {ac.activeUser}. Bye!")
     exit()
 
 if __name__ == "__main__":
